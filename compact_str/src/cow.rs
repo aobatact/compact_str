@@ -1,8 +1,16 @@
+use core::hash::{Hash, Hasher};
+use core::str::FromStr;
 use core::{
     borrow::{Borrow, BorrowMut},
+    cmp::Ordering,
     marker::PhantomData,
+    ops::{Deref, DerefMut},
     str::Utf8Error,
 };
+
+use alloc::boxed::Box;
+use alloc::fmt;
+use alloc::{borrow::Cow, string::String};
 
 use crate::{repr::Repr, CompactString, ReserveError, UnwrapWithMsg, Utf16Error};
 
@@ -412,11 +420,55 @@ impl<'a> CompactCowStr<'a> {
         let len = self.len();
         unsafe { core::str::from_utf8_unchecked_mut(&mut self.0.as_mut_buf()[..len]) }
     }
+
+    /// Returns whether or not the [`CompactString`] is heap allocated.
+    ///
+    /// # Examples
+    /// ### Inlined
+    /// ```
+    /// # use compact_str::CompactString;
+    /// let hello = CompactString::new("hello world");
+    ///
+    /// assert!(!hello.is_heap_allocated());
+    /// ```
+    ///
+    /// ### Heap Allocated
+    /// ```
+    /// # use compact_str::CompactString;
+    /// let msg = CompactString::new("this message will self destruct in 5, 4, 3, 2, 1 💥");
+    ///
+    /// assert!(msg.is_heap_allocated());
+    /// ```
+    #[inline]
+    pub fn is_heap_allocated(&self) -> bool {
+        self.0.is_heap_allocated()
+    }
+
+    /// Convert the [`CompactString`] into a [`String`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use compact_str::CompactString;
+    /// let s = CompactString::new("Hello world");
+    /// let s = s.into_string();
+    /// assert_eq!(s, "Hello world");
+    /// ```
+    pub fn into_string(self) -> String {
+        self.0.into_string()
+    }
+
+    fn into_compact_string(self) -> CompactString {
+        self.into()
+    }
 }
 
 impl<'a> From<CompactString> for CompactCowStr<'a> {
     #[inline]
     fn from(value: CompactString) -> Self {
+        // SAFETY:
+        // * A `HeapBuffer` and `Repr` have the same size
+        // * and all LastUtf8Char is valid for `CompactCowStr`
         unsafe { std::mem::transmute(value) }
     }
 }
@@ -427,6 +479,9 @@ impl<'a> From<&'a CompactString> for CompactCowStr<'a> {
         if value.is_heap_allocated() {
             Self::new(value.as_str())
         } else {
+            // If the original CompactString is not heap allocated,
+            // we need to preserve whether this repr is stacic or non-static refernce,
+            // or is on the stack.
             value.clone().into()
         }
     }
@@ -440,14 +495,260 @@ impl<'a> From<CompactCowStr<'a>> for CompactString {
     }
 }
 
+impl Clone for CompactCowStr<'_> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self::new_raw(self.0.clone())
+    }
+
+    #[inline]
+    fn clone_from(&mut self, source: &Self) {
+        self.0.clone_from(&source.0)
+    }
+}
+
+impl Default for CompactCowStr<'_> {
+    #[inline]
+    fn default() -> Self {
+        CompactCowStr::new("")
+    }
+}
+
+impl Deref for CompactCowStr<'_> {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl DerefMut for CompactCowStr<'_> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut str {
+        self.as_mut_str()
+    }
+}
+
+impl AsRef<str> for CompactCowStr<'_> {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AsRef<[u8]> for CompactCowStr<'_> {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 impl<'a> Borrow<str> for CompactCowStr<'a> {
+    #[inline]
     fn borrow(&self) -> &str {
         &self.as_str()
     }
 }
 
 impl<'a> BorrowMut<str> for CompactCowStr<'a> {
+    #[inline]
     fn borrow_mut(&mut self) -> &mut str {
         self.as_mut_str()
+    }
+}
+
+impl Eq for CompactCowStr<'_> {}
+
+impl<T: AsRef<str>> PartialEq<T> for CompactCowStr<'_> {
+    fn eq(&self, other: &T) -> bool {
+        self.as_str() == other.as_ref()
+    }
+}
+
+impl PartialEq<CompactCowStr<'_>> for String {
+    fn eq(&self, other: &CompactCowStr<'_>) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<CompactCowStr<'_>> for &str {
+    fn eq(&self, other: &CompactCowStr<'_>) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl<'a> PartialEq<CompactCowStr<'_>> for Cow<'a, str> {
+    fn eq(&self, other: &CompactCowStr<'_>) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl Ord for CompactCowStr<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl PartialOrd for CompactCowStr<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Hash for CompactCowStr<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state)
+    }
+}
+
+impl<'a> From<&'a str> for CompactCowStr<'_> {
+    #[inline]
+    #[track_caller]
+    fn from(s: &'a str) -> Self {
+        CompactCowStr::new(s)
+    }
+}
+
+impl From<String> for CompactCowStr<'_> {
+    #[inline]
+    #[track_caller]
+    fn from(s: String) -> Self {
+        CompactString::from(s).into()
+    }
+}
+
+impl<'a> From<&'a String> for CompactCowStr<'_> {
+    #[inline]
+    #[track_caller]
+    fn from(s: &'a String) -> Self {
+        CompactCowStr::new(s)
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for CompactCowStr<'_> {
+    fn from(cow: Cow<'a, str>) -> Self {
+        match cow {
+            Cow::Borrowed(s) => s.into(),
+            // we separate these two so we can re-use the underlying buffer in the owned case
+            Cow::Owned(s) => s.into(),
+        }
+    }
+}
+
+impl From<Box<str>> for CompactCowStr<'_> {
+    #[inline]
+    #[track_caller]
+    fn from(b: Box<str>) -> Self {
+        CompactString::from(b).into()
+    }
+}
+
+impl From<CompactCowStr<'_>> for String {
+    #[inline]
+    fn from(s: CompactCowStr<'_>) -> Self {
+        s.into_string()
+    }
+}
+
+impl<'a> From<CompactCowStr<'a>> for Cow<'a, str> {
+    #[inline]
+    fn from(s: CompactCowStr<'a>) -> Self {
+        CompactString::from(s).into()
+    }
+}
+
+impl<'a> From<&'a CompactCowStr<'_>> for Cow<'a, str> {
+    #[inline]
+    fn from(s: &'a CompactCowStr<'_>) -> Self {
+        Self::Borrowed(s.as_str())
+    }
+}
+
+#[rustversion::since(1.60)]
+#[cfg(target_has_atomic = "ptr")]
+impl From<CompactCowStr<'_>> for alloc::sync::Arc<str> {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        Self::from(value.as_str())
+    }
+}
+
+impl From<CompactCowStr<'_>> for alloc::rc::Rc<str> {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        Self::from(value.as_str())
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<CompactCowStr<'_>> for Box<dyn std::error::Error + Send + Sync> {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        CompactString::from(value).into()
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<CompactCowStr<'_>> for Box<dyn std::error::Error> {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        CompactString::from(value).into()
+    }
+}
+
+impl From<CompactCowStr<'_>> for Box<str> {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        if value.is_heap_allocated() {
+            value.into_string().into_boxed_str()
+        } else {
+            Box::from(value.as_str())
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<CompactCowStr<'_>> for std::ffi::OsString {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        Self::from(value.into_string())
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<CompactCowStr<'_>> for std::path::PathBuf {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        Self::from(std::ffi::OsString::from(value))
+    }
+}
+
+#[cfg(feature = "std")]
+impl AsRef<std::path::Path> for CompactCowStr<'_> {
+    fn as_ref(&self) -> &std::path::Path {
+        std::path::Path::new(self.as_str())
+    }
+}
+
+impl From<CompactCowStr<'_>> for alloc::vec::Vec<u8> {
+    fn from(value: CompactCowStr<'_>) -> Self {
+        if value.is_heap_allocated() {
+            value.into_string().into_bytes()
+        } else {
+            value.as_bytes().to_vec()
+        }
+    }
+}
+
+impl<'a> FromStr for CompactCowStr<'a> {
+    type Err = core::convert::Infallible;
+    fn from_str(s: &str) -> Result<CompactCowStr<'a>, Self::Err> {
+        Ok(CompactCowStr::from(s))
+    }
+}
+
+impl fmt::Debug for CompactCowStr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.as_str(), f)
+    }
+}
+
+impl fmt::Display for CompactCowStr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self.as_str(), f)
     }
 }

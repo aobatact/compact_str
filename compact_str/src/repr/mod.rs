@@ -1,10 +1,7 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use core::str::Utf8Error;
-use core::{
-    mem,
-    ptr,
-};
+use core::{mem, ptr};
 
 #[cfg(feature = "bytes")]
 mod bytes;
@@ -30,10 +27,7 @@ use ref_str::RefStr;
 use ref_str::StaticStr;
 pub(crate) use traits::IntoRepr;
 
-use crate::{
-    ReserveError,
-    UnwrapWithMsg,
-};
+use crate::{ReserveError, UnwrapWithMsg};
 
 /// The max size of a string we can fit inline
 pub const MAX_SIZE: usize = core::mem::size_of::<String>();
@@ -742,7 +736,7 @@ impl Repr {
     }
 
     /// Makes this [`Repr`] as owned.
-    /// 
+    ///
     /// When this [`Repr`] represent bollowed resource, clone them to new heap.
     pub fn owned(&mut self) {
         if let Some(str) = self.as_non_static_str() {
@@ -885,19 +879,13 @@ fn ensure_read(value: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::{
-        String,
-        ToString,
-    };
+    use alloc::string::{String, ToString};
     use alloc::vec::Vec;
 
     use quickcheck_macros::quickcheck;
     use test_case::test_case;
 
-    use super::{
-        Repr,
-        MAX_SIZE,
-    };
+    use super::{Repr, MAX_SIZE};
     use crate::ReserveError;
 
     const EIGHTEEN_MB: usize = 18 * 1024 * 1024;
