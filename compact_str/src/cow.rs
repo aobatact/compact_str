@@ -12,6 +12,7 @@ use alloc::boxed::Box;
 use alloc::fmt;
 use alloc::{borrow::Cow, string::String};
 
+use crate::ToCompactString;
 use crate::{repr::Repr, CompactString, ReserveError, UnwrapWithMsg, Utf16Error};
 
 #[repr(transparent)]
@@ -654,7 +655,7 @@ impl From<CompactCowStr<'_>> for String {
 impl<'a> From<CompactCowStr<'a>> for Cow<'a, str> {
     #[inline]
     fn from(s: CompactCowStr<'a>) -> Self {
-        CompactString::from(s).into()
+        s.0.into_cow()
     }
 }
 

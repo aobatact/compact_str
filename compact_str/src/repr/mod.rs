@@ -253,6 +253,17 @@ impl Repr {
         }
     }
 
+    /// Converts a [`Repr`] into a [`Cow`], in `O(1)` time, if possible
+    #[inline]
+    pub fn into_cow<'a>(self) -> Cow<'a, str> {
+        if self.is_ref_str() {
+            let ref_repr: RefStr = unsafe { core::mem::transmute(self) };
+            Cow::Borrowed(ref_repr.get_text())
+        } else {
+            self.into_string().into()
+        }
+    }
+
     /// Reserves at least `additional` bytes. If there is already enough capacity to store
     /// `additional` bytes this is a no-op
     #[inline]
