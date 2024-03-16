@@ -28,16 +28,17 @@ impl<'a> CompactCowStr<'a> {
         CompactCowStr(repr, PhantomData)
     }
 
-    /// Creates a new [`CompactString`] from any type that implements `AsRef<str>`.
+    /// Creates a new [`CompactCowStr`] from any type that implements `AsRef<str>`.
     /// If the string is short enough, then it will be inlined on the stack!
+    /// Otherwise it will be stored as reference.
     ///
-    /// In a `static` or `const` context you can use the method [`CompactString::const_new()`].
+    /// In a `static` or `const` context you can use the method [`CompactCowStr::const_new()`].
     ///
     /// # Examples
     ///
     /// ### Inlined
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// // We can inline strings up to 12 characters long on 32-bit architectures...
     /// #[cfg(target_pointer_width = "32")]
     /// let s = "i'm 12 chars";
@@ -45,7 +46,7 @@ impl<'a> CompactCowStr<'a> {
     /// #[cfg(target_pointer_width = "64")]
     /// let s = "i am 24 characters long!";
     ///
-    /// let compact = CompactString::new(&s);
+    /// let compact = CompactCowStr::new(&s);
     ///
     /// assert_eq!(compact, s);
     /// // we are not allocated on the heap!
@@ -57,33 +58,51 @@ impl<'a> CompactCowStr<'a> {
     /// # use compact_str::CompactString;
     /// // For longer strings though, we get allocated on the heap
     /// let long = "I am a longer string that will be allocated on the heap";
-    /// let compact = CompactString::new(long);
+    /// let compact = CompactCowStr::new(long);
     ///
     /// assert_eq!(compact, long);
     /// // we are allocated on the heap!
     /// assert!(compact.is_heap_allocated());
     /// ```
-    ///
-    /// ### Creation
-    /// ```
-    /// use compact_str::CompactString;
-    ///
-    /// // Using a `&'static str`
-    /// let s = "hello world!";
-    /// let hello = CompactString::new(&s);
-    ///
-    /// // Using a `String`
-    /// let u = String::from("🦄🌈");
-    /// let unicorn = CompactString::new(u);
-    ///
-    /// // Using a `Box<str>`
-    /// let b: Box<str> = String::from("📦📦📦").into_boxed_str();
-    /// let boxed = CompactString::new(&b);
-    /// ```
     #[inline]
     #[track_caller]
     pub fn new<T: AsRef<str>>(text: T) -> Self {
         Self::new_raw(Repr::new_ref(text.as_ref()))
+    }
+
+    /// Creates a new inline [`CompactCowStr`] from `&'static str` at compile time.
+    /// Complexity: O(1). As an optimization, short strings get inlined.
+    ///
+    /// In a dynamic context you can use the method [`CompactCowStr::new()`].
+    ///
+    /// # Examples
+    /// ```
+    /// use compact_str::CompactCowStr;
+    ///
+    /// const DEFAULT_NAME: CompactCowStr = CompactCowStr::const_new("untitled");
+    /// ```
+    #[inline]
+    pub const fn const_new(text: &'static str) -> Self {
+        CompactCowStr::new_raw(Repr::const_new(text))
+    }
+
+    /// Get back the `&'a str` if it was stored as borrowed reference.
+    ///
+    /// # Examples
+    /// ```
+    /// use compact_str::CompactCowStr;
+    ///
+    /// const DEFAULT_NAME: CompactString =
+    ///     CompactString::const_new("That is not dead which can eternal lie.");
+    /// assert_eq!(
+    ///     DEFAULT_NAME.as_static_str().unwrap(),
+    ///     "That is not dead which can eternal lie.",
+    /// );
+    /// ```
+    #[inline]
+    #[rustversion::attr(since(1.64), const)]
+    pub fn as_ref_str(&'a self) -> Option<&'a str> {
+        self.0.as_ref_str()
     }
 
     /// Get back the `&'static str` constructed by [`CompactString::const_new`].
