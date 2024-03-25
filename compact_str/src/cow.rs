@@ -53,16 +53,16 @@ impl<'a> CompactCowStr<'a> {
     /// assert!(!compact.is_heap_allocated());
     /// ```
     ///
-    /// ### Heap
+    /// ### Reference
     /// ```
-    /// # use compact_str::CompactString;
-    /// // For longer strings though, we get allocated on the heap
-    /// let long = "I am a longer string that will be allocated on the heap";
+    /// # use compact_str::CompactCowStr;
+    /// // For longer strings though, we preserve the reference.
+    /// let long = "I am a longer string that will be preserved as a reference";
     /// let compact = CompactCowStr::new(long);
     ///
     /// assert_eq!(compact, long);
-    /// // we are allocated on the heap!
-    /// assert!(compact.is_heap_allocated());
+    /// // we keep the same reference!
+    /// assert!(compact.as_ptr(), long.as_ptr());
     /// ```
     #[inline]
     #[track_caller]
@@ -90,12 +90,19 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// # Examples
     /// ```
-    /// use compact_str::CompactCowStr;
+    /// # use compact_str::CompactCowStr;
+    /// // For longer strings though, we preserve the reference.
+    /// let long = "I am a longer string that will be preserved as a reference";
+    /// let compact = CompactCowStr::new(long);
     ///
-    /// const DEFAULT_NAME: CompactString =
-    ///     CompactString::const_new("That is not dead which can eternal lie.");
+    /// assert_eq!(compact, long);
+    /// // we keep the same reference!
+    /// assert!(compact.as_ref_str().unwrap().as_ptr(), long.as_ptr());
+    /// 
+    /// const DEFAULT_NAME: CompactCowStr =
+    ///     CompactCowStr::const_new("That is not dead which can eternal lie.");
     /// assert_eq!(
-    ///     DEFAULT_NAME.as_static_str().unwrap(),
+    ///     DEFAULT_NAME.as_ref_str().unwrap(),
     ///     "That is not dead which can eternal lie.",
     /// );
     /// ```
@@ -105,17 +112,17 @@ impl<'a> CompactCowStr<'a> {
         self.0.as_ref_str()
     }
 
-    /// Get back the `&'static str` constructed by [`CompactString::const_new`].
+    /// Get back the `&'static str` constructed by [`CompactCowStr::const_new`].
     ///
     /// If the string was short enough that it could be inlined, then it was inline, and
     /// this method will return `None`.
     ///
     /// # Examples
     /// ```
-    /// use compact_str::CompactString;
+    /// use compact_str::CompactCowStr;
     ///
-    /// const DEFAULT_NAME: CompactString =
-    ///     CompactString::const_new("That is not dead which can eternal lie.");
+    /// const DEFAULT_NAME: CompactCowStr =
+    ///     CompactCowStr::const_new("That is not dead which can eternal lie.");
     /// assert_eq!(
     ///     DEFAULT_NAME.as_static_str().unwrap(),
     ///     "That is not dead which can eternal lie.",
@@ -127,76 +134,24 @@ impl<'a> CompactCowStr<'a> {
         self.0.as_static_str()
     }
 
-    /// Creates a new empty [`CompactString`] with the capacity to fit at least `capacity` bytes.
-    ///
-    /// A `CompactString` will inline strings on the stack, if they're small enough. Specifically,
-    /// if the string has a length less than or equal to `std::mem::size_of::<String>` bytes
-    /// then it will be inlined. This also means that `CompactString`s have a minimum capacity
-    /// of `std::mem::size_of::<String>`.
-    ///
-    /// # Panics
-    ///
-    /// This method panics if the system is out-of-memory.
-    /// Use [`CompactString::try_with_capacity()`] if you want to handle such a problem manually.
-    ///
-    /// # Examples
-    ///
-    /// ### "zero" Capacity
-    /// ```
-    /// # use compact_str::CompactString;
-    /// // Creating a CompactString with a capacity of 0 will create
-    /// // one with capacity of std::mem::size_of::<String>();
-    /// let empty = CompactString::with_capacity(0);
-    /// let min_size = std::mem::size_of::<String>();
-    ///
-    /// assert_eq!(empty.capacity(), min_size);
-    /// assert_ne!(0, min_size);
-    /// assert!(!empty.is_heap_allocated());
-    /// ```
-    ///
-    /// ### Max Inline Size
-    /// ```
-    /// # use compact_str::CompactString;
-    /// // Creating a CompactString with a capacity of std::mem::size_of::<String>()
-    /// // will not heap allocate.
-    /// let str_size = std::mem::size_of::<String>();
-    /// let empty = CompactString::with_capacity(str_size);
-    ///
-    /// assert_eq!(empty.capacity(), str_size);
-    /// assert!(!empty.is_heap_allocated());
-    /// ```
-    ///
-    /// ### Heap Allocating
-    /// ```
-    /// # use compact_str::CompactString;
-    /// // If you create a `CompactString` with a capacity greater than
-    /// // `std::mem::size_of::<String>`, it will heap allocated. For heap
-    /// // allocated strings we have a minimum capacity
-    ///
-    /// const MIN_HEAP_CAPACITY: usize = std::mem::size_of::<usize>() * 4;
-    ///
-    /// let heap_size = std::mem::size_of::<String>() + 1;
-    /// let empty = CompactString::with_capacity(heap_size);
-    ///
-    /// assert_eq!(empty.capacity(), MIN_HEAP_CAPACITY);
-    /// assert!(empty.is_heap_allocated());
-    /// ```
+    /// Creates a new empty [`CompactCowStr`] with the capacity to fit at least `capacity` bytes.
+    /// 
+    /// This function behaves similarly to the [`CompactString::with_capacity`] function.
     #[inline]
     #[track_caller]
     pub fn with_capacity(capacity: usize) -> Self {
         CompactString::with_capacity(capacity).into()
     }
 
-    /// Fallible version of [`CompactString::with_capacity()`]
+    /// Fallible version of [`CompactCowStr::with_capacity()`]
     ///
-    /// This method won't panic if the system is out-of-memory, but return an [`ReserveError`].
-    /// Otherwise it behaves the same as [`CompactString::with_capacity()`].
+    /// This function behaves similarly to the [`CompactString::try_with_capacity`] function.
     #[inline]
     pub fn try_with_capacity(capacity: usize) -> Result<Self, ReserveError> {
         CompactString::try_with_capacity(capacity).map(Into::into)
     }
 
-    /// Convert a slice of bytes into a [`CompactString`].
+    /// Convert a slice of bytes into a [`CompactCowStr`].
     ///
     /// A [`CompactString`] is a contiguous collection of bytes (`u8`s) that is valid [`UTF-8`](https://en.wikipedia.org/wiki/UTF-8).
     /// This method converts from an arbitrary contiguous collection of bytes into a
@@ -259,7 +214,9 @@ impl<'a> CompactCowStr<'a> {
     #[must_use]
     #[track_caller]
     pub unsafe fn from_utf8_unchecked<B: AsRef<[u8]>>(buf: B) -> Self {
-        todo!();
+        Repr::from_utf8_unchecked_ref(buf)            
+            .map(CompactCowStr::new_raw)
+            .unwrap_with_msg()
     }
 
     /// Decode a [`UTF-16`](https://en.wikipedia.org/wiki/UTF-16) slice of bytes into a

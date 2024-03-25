@@ -170,6 +170,45 @@ impl Repr {
         Ok(repr)
     }
 
+    /// Create a [`Repr`] from a slice of bytes that is UTF-8, without validating that it is indeed
+    /// UTF-8
+    ///
+    /// # Safety
+    /// * The caller must guarantee that `buf` is valid UTF-8
+    #[inline]
+    pub unsafe fn from_utf8_unchecked_ref<B: AsRef<[u8]>>(buf: B) -> Result<Self, ReserveError> {
+        let bytes = buf.as_ref();
+        let bytes_len = bytes.len();
+
+        // There's an edge case where the final byte of this buffer == `HEAP_MASK`, which is
+        // invalid UTF-8, but would result in us creating an inline variant, that identifies as
+        // a heap variant. If a user ever tried to reference the data at all, we'd incorrectly
+        // try and read data from an invalid memory address, causing undefined behavior.
+        if bytes_len == MAX_SIZE {
+            let last_byte = bytes[bytes_len - 1];
+            // If we hit the edge case, reserve additional space to make the repr becomes heap
+            // allocated, which prevents us from writing this last byte inline
+            if last_byte >= 0b11000000 {
+                // Create a Repr with enough capacity for the entire buffer
+                let mut repr = Repr::with_capacity(MAX_SIZE + 1)?;
+
+                // SAFETY: The caller is responsible for making sure the provided buffer is UTF-8. This
+                // invariant is documented in the public API
+                let slice = repr.as_mut_buf();
+                // write the chunk into the Repr
+                slice[..bytes_len].copy_from_slice(bytes);
+
+                // Set the length of the Repr
+                // SAFETY: We just wrote the entire `buf` into the Repr
+                repr.set_len(bytes_len);
+
+                return Ok(repr);
+            }
+        }
+        // Construct a Repr from the &str
+        Ok(Self::new_ref(core::str::from_utf8_unchecked(bytes)))
+    }
+
     /// Create a [`Repr`] from a [`String`], in `O(1)` time. We'll attempt to inline the string
     /// if `should_inline` is `true`
     ///
