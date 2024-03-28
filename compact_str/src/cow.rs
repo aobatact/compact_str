@@ -1,5 +1,5 @@
 use core::hash::{Hash, Hasher};
-use core::ops::RangeBounds;
+use core::ops::{Add, AddAssign, RangeBounds};
 use core::str::FromStr;
 use core::{
     borrow::{Borrow, BorrowMut},
@@ -1351,5 +1351,82 @@ impl fmt::Debug for CompactCowStr<'_> {
 impl fmt::Display for CompactCowStr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self.as_str(), f)
+    }
+}
+
+impl<S> FromIterator<S> for CompactCowStr<'_>
+where
+    CompactString: FromIterator<S>,
+{
+    fn from_iter<T: IntoIterator<Item = S>>(iter: T) -> Self {
+        CompactString::from_iter(iter).into()
+    }
+}
+
+impl<'a> FromIterator<CompactCowStr<'a>> for CompactString {
+    fn from_iter<T: IntoIterator<Item = CompactCowStr<'a>>>(iter: T) -> Self {
+        let repr = iter.into_iter().collect();
+        CompactString(repr)
+    }
+}
+
+impl<'a> FromIterator<CompactCowStr<'a>> for String {
+    fn from_iter<T: IntoIterator<Item = CompactCowStr<'a>>>(iter: T) -> Self {
+        let mut iterator = iter.into_iter();
+        match iterator.next() {
+            None => String::new(),
+            Some(buf) => {
+                let mut buf = buf.into_string();
+                buf.extend(iterator);
+                buf
+            }
+        }
+    }
+}
+
+impl<'a> Extend<CompactCowStr<'a>> for String {
+    fn extend<T: IntoIterator<Item = CompactCowStr<'a>>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(&s);
+        }
+    }
+}
+
+impl<'a> Extend<CompactCowStr<'a>> for Cow<'_, str> {
+    fn extend<T: IntoIterator<Item = CompactCowStr<'a>>>(&mut self, iter: T) {
+        self.to_mut().extend(iter);
+    }
+}
+
+impl<'a, S> Extend<S> for CompactCowStr<'a>
+where
+    CompactString: Extend<S>,
+{
+    fn extend<T: IntoIterator<Item = S>>(&mut self, iter: T) {
+        self.as_mut_compact_string().extend(iter);
+    }
+}
+
+impl core::fmt::Write for CompactCowStr<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.as_mut_compact_string().write_str(s)
+    }
+
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
+        self.as_mut_compact_string().write_fmt(args)
+    }
+}
+
+impl Add<&str> for CompactCowStr<'_> {
+    type Output = Self;
+    fn add(mut self, rhs: &str) -> Self::Output {
+        self.push_str(rhs);
+        self
+    }
+}
+
+impl AddAssign<&str> for CompactCowStr<'_> {
+    fn add_assign(&mut self, rhs: &str) {
+        self.push_str(rhs);
     }
 }
