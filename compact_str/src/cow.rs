@@ -98,7 +98,7 @@ impl<'a> CompactCowStr<'a> {
     /// assert_eq!(compact, long);
     /// // we keep the same reference!
     /// assert!(compact.as_ref_str().unwrap().as_ptr(), long.as_ptr());
-    /// 
+    ///
     /// const DEFAULT_NAME: CompactCowStr =
     ///     CompactCowStr::const_new("That is not dead which can eternal lie.");
     /// assert_eq!(
@@ -135,8 +135,62 @@ impl<'a> CompactCowStr<'a> {
     }
 
     /// Creates a new empty [`CompactCowStr`] with the capacity to fit at least `capacity` bytes.
-    /// 
-    /// This function behaves similarly to the [`CompactString::with_capacity`] function.
+    /// This will
+    ///
+    /// This function behaves similarly to the [`CompactCowStr::with_capacity`] function.
+    ///
+    /// A `CompactCowStr` will inline strings on the stack, if they're small enough. Specifically,
+    /// if the string has a length less than or equal to `std::mem::size_of::<String>` bytes
+    /// then it will be inlined. This also means that `CompactCowStr`s have a minimum capacity
+    /// of `std::mem::size_of::<String>`.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the system is out-of-memory.
+    /// Use [`CompactCowStr::try_with_capacity()`] if you want to handle such a problem manually.
+    ///
+    /// # Examples
+    ///
+    /// ### "zero" Capacity
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// // Creating a CompactCowStr with a capacity of 0 will create
+    /// // one with capacity of std::mem::size_of::<String>();
+    /// let empty = CompactCowStr::with_capacity(0);
+    /// let min_size = std::mem::size_of::<String>();
+    ///
+    /// assert_eq!(empty.capacity(), min_size);
+    /// assert_ne!(0, min_size);
+    /// assert!(!empty.is_heap_allocated());
+    /// ```
+    ///
+    /// ### Max Inline Size
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// // Creating a CompactCowStr with a capacity of std::mem::size_of::<String>()
+    /// // will not heap allocate.
+    /// let str_size = std::mem::size_of::<String>();
+    /// let empty = CompactCowStr::with_capacity(str_size);
+    ///
+    /// assert_eq!(empty.capacity(), str_size);
+    /// assert!(!empty.is_heap_allocated());
+    /// ```
+    ///
+    /// ### Heap Allocating
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// // If you create a `CompactCowStr` with a capacity greater than
+    /// // `std::mem::size_of::<String>`, it will heap allocated. For heap
+    /// // allocated strings we have a minimum capacity
+    ///
+    /// const MIN_HEAP_CAPACITY: usize = std::mem::size_of::<usize>() * 4;
+    ///
+    /// let heap_size = std::mem::size_of::<String>() + 1;
+    /// let empty = CompactCowStr::with_capacity(heap_size);
+    ///
+    /// assert_eq!(empty.capacity(), MIN_HEAP_CAPACITY);
+    /// assert!(empty.is_heap_allocated());
+    /// ```
     #[inline]
     #[track_caller]
     pub fn with_capacity(capacity: usize) -> Self {
@@ -145,7 +199,10 @@ impl<'a> CompactCowStr<'a> {
 
     /// Fallible version of [`CompactCowStr::with_capacity()`]
     ///
-    /// This function behaves similarly to the [`CompactString::try_with_capacity`] function.
+    /// This function behaves similarly to the [`CompactString::try_with_capacity`] function.    
+    ///
+    /// This method won't panic if the system is out-of-memory, but return an [`ReserveError`].
+    /// Otherwise it behaves the same as [`CompactString::with_capacity()`].
     #[inline]
     pub fn try_with_capacity(capacity: usize) -> Result<Self, ReserveError> {
         CompactString::try_with_capacity(capacity).map(Into::into)
@@ -153,28 +210,25 @@ impl<'a> CompactCowStr<'a> {
 
     /// Convert a slice of bytes into a [`CompactCowStr`].
     ///
-    /// A [`CompactString`] is a contiguous collection of bytes (`u8`s) that is valid [`UTF-8`](https://en.wikipedia.org/wiki/UTF-8).
+    /// A [`CompactCowStr`] is a contiguous collection of bytes (`u8`s) that is valid [`UTF-8`](https://en.wikipedia.org/wiki/UTF-8).
     /// This method converts from an arbitrary contiguous collection of bytes into a
-    /// [`CompactString`], failing if the provided bytes are not `UTF-8`.
-    ///
-    /// Note: If you want to create a [`CompactString`] from a non-contiguous collection of bytes,
-    /// enable the `bytes` feature of this crate, and see `CompactString::from_utf8_buf`
+    /// [`CompactCowStr`], failing if the provided bytes are not `UTF-8`.
     ///
     /// # Examples
     /// ### Valid UTF-8
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let bytes = vec![240, 159, 166, 128, 240, 159, 146, 175];
-    /// let compact = CompactString::from_utf8(bytes).expect("valid UTF-8");
+    /// let compact = CompactCowStr::from_utf8(bytes).expect("valid UTF-8");
     ///
     /// assert_eq!(compact, "🦀💯");
     /// ```
     ///
     /// ### Invalid UTF-8
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let bytes = vec![255, 255, 255];
-    /// let result = CompactString::from_utf8(bytes);
+    /// let result = CompactCowStr::from_utf8(bytes);
     ///
     /// assert!(result.is_err());
     /// ```
@@ -186,26 +240,26 @@ impl<'a> CompactCowStr<'a> {
     /// Converts a vector of bytes to a [`CompactString`] without checking that the string contains
     /// valid UTF-8.
     ///
-    /// See the safe version, [`CompactString::from_utf8`], for more details.
+    /// See the safe version, [`CompactCowStr::from_utf8`], for more details.
     ///
     /// # Safety
     ///
     /// This function is unsafe because it does not check that the bytes passed to it are valid
     /// UTF-8. If this constraint is violated, it may cause memory unsafety issues with future users
-    /// of the [`CompactString`], as the rest of the standard library assumes that
-    /// [`CompactString`]s are valid UTF-8.
+    /// of the [`CompactCowStr`], as the rest of the standard library assumes that
+    /// [`CompactCowStr`]s are valid UTF-8.
     ///
     /// # Examples
     ///
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// // some bytes, in a vector
     /// let sparkle_heart = vec![240, 159, 146, 150];
     ///
     /// let sparkle_heart = unsafe {
-    ///     CompactString::from_utf8_unchecked(sparkle_heart)
+    ///     CompactCowStr::from_utf8_unchecked(sparkle_heart)
     /// };
     ///
     /// assert_eq!("💖", sparkle_heart);
@@ -214,29 +268,30 @@ impl<'a> CompactCowStr<'a> {
     #[must_use]
     #[track_caller]
     pub unsafe fn from_utf8_unchecked<B: AsRef<[u8]>>(buf: B) -> Self {
-        Repr::from_utf8_unchecked_ref(buf)            
+        Repr::from_utf8_unchecked_ref(buf)
             .map(CompactCowStr::new_raw)
             .unwrap_with_msg()
     }
 
     /// Decode a [`UTF-16`](https://en.wikipedia.org/wiki/UTF-16) slice of bytes into a
-    /// [`CompactString`], returning an [`Err`] if the slice contains any invalid data.
+    /// [`CompactCowStr`], returning an [`Err`] if the slice contains any invalid data.
+    ///
     ///
     /// # Examples
     /// ### Valid UTF-16
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let buf: &[u16] = &[0xD834, 0xDD1E, 0x006d, 0x0075, 0x0073, 0x0069, 0x0063];
-    /// let compact = CompactString::from_utf16(buf).unwrap();
+    /// let compact = CompactCowStr::from_utf16(buf).unwrap();
     ///
     /// assert_eq!(compact, "𝄞music");
     /// ```
     ///
     /// ### Invalid UTF-16
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let buf: &[u16] = &[0xD834, 0xDD1E, 0x006d, 0x0075, 0xD800, 0x0069, 0x0063];
-    /// let res = CompactString::from_utf16(buf);
+    /// let res = CompactCowStr::from_utf16(buf);
     ///
     /// assert!(res.is_err());
     /// ```
@@ -253,21 +308,21 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// // 𝄞mus<invalid>ic<invalid>
     /// let v = &[0xD834, 0xDD1E, 0x006d, 0x0075,
     ///           0x0073, 0xDD1E, 0x0069, 0x0063,
     ///           0xD834];
     ///
-    /// assert_eq!(CompactString::from("𝄞mus\u{FFFD}ic\u{FFFD}"),
-    ///            CompactString::from_utf16_lossy(v));
+    /// assert_eq!(CompactCowStr::from("𝄞mus\u{FFFD}ic\u{FFFD}"),
+    ///            CompactCowStr::from_utf16_lossy(v));
     /// ```
     #[inline]
     pub fn from_utf16_lossy<B: AsRef<[u16]>>(buf: B) -> Self {
         CompactString::from_utf16_lossy(buf).into()
     }
 
-    /// Returns the length of the [`CompactString`] in `bytes`, not [`char`]s or graphemes.
+    /// Returns the length of the [`CompactCowStr`] in `bytes`, not [`char`]s or graphemes.
     ///
     /// When using `UTF-8` encoding (which all strings in Rust do) a single character will be 1 to 4
     /// bytes long, therefore the return value of this method might not be what a human considers
@@ -275,11 +330,11 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let ascii = CompactString::new("hello world");
+    /// # use compact_str::CompactCowStr;
+    /// let ascii = CompactCowStr::new("hello world");
     /// assert_eq!(ascii.len(), 11);
     ///
-    /// let emoji = CompactString::new("👱");
+    /// let emoji = CompactCowStr::new("👱");
     /// assert_eq!(emoji.len(), 4);
     /// ```
     #[inline]
@@ -291,8 +346,8 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut msg = CompactString::new("");
+    /// # use compact_str::CompactCowStr;
+    /// let mut msg = CompactCowStr::new("");
     /// assert!(msg.is_empty());
     ///
     /// // add some characters
@@ -304,25 +359,25 @@ impl<'a> CompactCowStr<'a> {
         self.0.is_empty()
     }
 
-    /// Returns the capacity of the [`CompactString`], in bytes.
+    /// Returns the capacity of the [`CompactCowStr`], in bytes.
     ///
     /// # Note
-    /// * A `CompactString` will always have a capacity of at least `std::mem::size_of::<String>()`
+    /// * A `CompactCowStr` will always have a capacity of at least `std::mem::size_of::<String>()`
     ///
     /// # Examples
     /// ### Minimum Size
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let min_size = std::mem::size_of::<String>();
-    /// let compact = CompactString::new("");
+    /// let compact = CompactCowStr::new("");
     ///
     /// assert!(compact.capacity() >= min_size);
     /// ```
     ///
     /// ### Heap Allocated
     /// ```
-    /// # use compact_str::CompactString;
-    /// let compact = CompactString::with_capacity(128);
+    /// # use compact_str::CompactCowStr;
+    /// let compact = CompactCowStr::with_capacity(128);
     /// assert_eq!(compact.capacity(), 128);
     /// ```
     #[inline]
@@ -330,24 +385,24 @@ impl<'a> CompactCowStr<'a> {
         self.0.capacity()
     }
 
-    /// Ensures that this [`CompactString`]'s capacity is at least `additional` bytes longer than
+    /// Ensures that this [`CompactCowStr`]'s capacity is at least `additional` bytes longer than
     /// its length. The capacity may be increased by more than `additional` bytes if it chooses,
     /// to prevent frequent reallocations.
     ///
     /// # Note
-    /// * A `CompactString` will always have at least a capacity of `std::mem::size_of::<String>()`
-    /// * Reserving additional bytes may cause the `CompactString` to become heap allocated
+    /// * A `CompactCowStr` will always have at least a capacity of `std::mem::size_of::<String>()`
+    /// * Reserving additional bytes may cause the `CompactCowStr` to become heap allocated
     ///
     /// # Panics
     /// This method panics if the new capacity overflows `usize` or if the system is out-of-memory.
-    /// Use [`CompactString::try_reserve()`] if you want to handle such a problem manually.
+    /// Use [`CompactCowStr::try_reserve()`] if you want to handle such a problem manually.
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     ///
     /// const WORD: usize = std::mem::size_of::<usize>();
-    /// let mut compact = CompactString::default();
+    /// let mut compact = CompactCowStr::default();
     /// assert!(compact.capacity() >= (WORD * 3) - 1);
     ///
     /// compact.reserve(200);
@@ -360,21 +415,21 @@ impl<'a> CompactCowStr<'a> {
         self.try_reserve(additional).unwrap_with_msg()
     }
 
-    /// Fallible version of [`CompactString::reserve()`]
+    /// Fallible version of [`CompactCowStr::reserve()`]
     ///
     /// This method won't panic if the system is out-of-memory, but return an [`ReserveError`]
-    /// Otherwise it behaves the same as [`CompactString::reserve()`].
+    /// Otherwise it behaves the same as [`CompactCowStr::reserve()`].
     #[inline]
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), ReserveError> {
         self.0.reserve(additional)
     }
 
-    /// Returns a string slice containing the entire [`CompactString`].
+    /// Returns a string slice containing the entire [`CompactCowStr`].
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let s = CompactString::new("hello");
+    /// # use compact_str::CompactCowStr;
+    /// let s = CompactCowStr::new("hello");
     ///
     /// assert_eq!(s.as_str(), "hello");
     /// ```
@@ -383,12 +438,12 @@ impl<'a> CompactCowStr<'a> {
         self.0.as_str()
     }
 
-    /// Returns a mutable string slice containing the entire [`CompactString`].
+    /// Returns a mutable string slice containing the entire [`CompactCowStr`].
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("hello");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("hello");
     /// s.as_mut_str().make_ascii_uppercase();
     ///
     /// assert_eq!(s.as_str(), "HELLO");
@@ -398,12 +453,12 @@ impl<'a> CompactCowStr<'a> {
         self.as_mut_compact_string().as_mut_str()
     }
 
-    /// Returns a byte slice of the [`CompactString`]'s contents.
+    /// Returns a byte slice of the [`CompactCowStr`]'s contents.
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let s = CompactString::new("hello");
+    /// # use compact_str::CompactCowStr;
+    /// let s = CompactCowStr::new("hello");
     ///
     /// assert_eq!(&[104, 101, 108, 108, 111], s.as_bytes());
     /// ```
@@ -423,7 +478,7 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let mut s = CompactString::new("hello");
     ///
     /// let slice = unsafe { s.as_mut_bytes() };
@@ -439,12 +494,12 @@ impl<'a> CompactCowStr<'a> {
         self.0.as_mut_buf()
     }
 
-    /// Appends the given [`char`] to the end of this [`CompactString`].
+    /// Appends the given [`char`] to the end of this [`CompactCowStr`].
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("foo");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("foo");
     ///
     /// s.push('b');
     /// s.push('a');
@@ -456,13 +511,13 @@ impl<'a> CompactCowStr<'a> {
         self.push_str(ch.encode_utf8(&mut [0; 4]));
     }
 
-    /// Removes the last character from the [`CompactString`] and returns it.
-    /// Returns `None` if this [`CompactString`] is empty.
+    /// Removes the last character from the [`CompactCowStr`] and returns it.
+    /// Returns `None` if this [`CompactCowStr`] is empty.
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("abc");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("abc");
     ///
     /// assert_eq!(s.pop(), Some('c'));
     /// assert_eq!(s.pop(), Some('b'));
@@ -475,12 +530,12 @@ impl<'a> CompactCowStr<'a> {
         self.0.pop()
     }
 
-    /// Appends a given string slice onto the end of this [`CompactString`]
+    /// Appends a given string slice onto the end of this [`CompactCowStr`]
     ///
     /// # Examples
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("abc");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("abc");
     ///
     /// s.push_str("123");
     ///
@@ -491,14 +546,14 @@ impl<'a> CompactCowStr<'a> {
         self.0.push_str(s)
     }
 
-    /// Removes a [`char`] from this [`CompactString`] at a byte position and returns it.
+    /// Removes a [`char`] from this [`CompactCowStr`] at a byte position and returns it.
     ///
     /// This is an *O*(*n*) operation, as it requires copying every element in the
     /// buffer.
     ///
     /// # Panics
     ///
-    /// Panics if `idx` is larger than or equal to the [`CompactString`]'s length,
+    /// Panics if `idx` is larger than or equal to the [`CompactCowStr`]'s length,
     /// or if it does not lie on a [`char`] boundary.
     ///
     /// # Examples
@@ -506,8 +561,8 @@ impl<'a> CompactCowStr<'a> {
     /// ### Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut c = CompactString::from("hello world");
+    /// # use compact_str::CompactCowStr;
+    /// let mut c = CompactCowStr::from("hello world");
     ///
     /// assert_eq!(c.remove(0), 'h');
     /// assert_eq!(c, "ello world");
@@ -519,16 +574,16 @@ impl<'a> CompactCowStr<'a> {
     /// ### Past total length:
     ///
     /// ```should_panic
-    /// # use compact_str::CompactString;
-    /// let mut c = CompactString::from("hello there!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut c = CompactCowStr::from("hello there!");
     /// c.remove(100);
     /// ```
     ///
     /// ### Not on char boundary:
     ///
     /// ```should_panic
-    /// # use compact_str::CompactString;
-    /// let mut c = CompactString::from("🦄");
+    /// # use compact_str::CompactCowStr;
+    /// let mut c = CompactCowStr::from("🦄");
     /// c.remove(1);
     /// ```
     #[inline]
@@ -536,10 +591,10 @@ impl<'a> CompactCowStr<'a> {
         self.as_mut_compact_string().remove(idx)
     }
 
-    /// Forces the length of the [`CompactString`] to `new_len`.
+    /// Forces the length of the [`CompactCowStr`] to `new_len`.
     ///
     /// This is a low-level operation that maintains none of the normal invariants for
-    /// `CompactString`. If you want to modify the `CompactString` you should use methods like
+    /// `CompactCowStr`. If you want to modify the `CompactCowStr` you should use methods like
     /// `push`, `push_str` or `pop`.
     ///
     /// # Safety
@@ -550,21 +605,21 @@ impl<'a> CompactCowStr<'a> {
         self.0.set_len(new_len)
     }
 
-    /// Returns whether or not the [`CompactString`] is heap allocated.
+    /// Returns whether or not the [`CompactCowStr`] is heap allocated.
     ///
     /// # Examples
     /// ### Inlined
     /// ```
-    /// # use compact_str::CompactString;
-    /// let hello = CompactString::new("hello world");
+    /// # use compact_str::CompactCowStr;
+    /// let hello = CompactCowStr::new("hello world");
     ///
     /// assert!(!hello.is_heap_allocated());
     /// ```
     ///
     /// ### Heap Allocated
     /// ```
-    /// # use compact_str::CompactString;
-    /// let msg = CompactString::new("this message will self destruct in 5, 4, 3, 2, 1 💥");
+    /// # use compact_str::CompactCowStr;
+    /// let msg = CompactCowStr::new("this message will self destruct in 5, 4, 3, 2, 1 💥");
     ///
     /// assert!(msg.is_heap_allocated());
     /// ```
@@ -573,7 +628,7 @@ impl<'a> CompactCowStr<'a> {
         self.0.is_heap_allocated()
     }
 
-    /// Removes the specified range in the [`CompactString`],
+    /// Removes the specified range in the [`CompactCowStr`],
     /// and replaces it with the given string.
     /// The given string doesn't need to be the same length as the range.
     ///
@@ -587,8 +642,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("Hello, world!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("Hello, world!");
     ///
     /// s.replace_range(7..12, "WORLD");
     /// assert_eq!(s, "Hello, WORLD!");
@@ -605,7 +660,7 @@ impl<'a> CompactCowStr<'a> {
             .replace_range(range, replace_with)
     }
 
-    /// Creates a new [`CompactString`] by repeating a string `n` times.
+    /// Creates a new [`CompactCowStr`] by repeating a string `n` times.
     ///
     /// # Panics
     ///
@@ -616,28 +671,28 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// use compact_str::CompactString;
-    /// assert_eq!(CompactString::new("abc").repeat(4), CompactString::new("abcabcabcabc"));
+    /// use compact_str::CompactCowStr;
+    /// assert_eq!(CompactCowStr::new("abc").repeat(4), CompactCowStr::new("abcabcabcabc"));
     /// ```
     ///
     /// A panic upon overflow:
     ///
     /// ```should_panic
-    /// use compact_str::CompactString;
+    /// use compact_str::CompactCowStr;
     ///
     /// // this will panic at runtime
-    /// let huge = CompactString::new("0123456789abcdef").repeat(usize::MAX);
+    /// let huge = CompactCowStr::new("0123456789abcdef").repeat(usize::MAX);
     /// ```
     #[must_use]
     pub fn repeat(&self, n: usize) -> Self {
         self.as_ref_compact_string().repeat(n).into()
     }
 
-    /// Truncate the [`CompactString`] to a shorter length.
+    /// Truncate the [`CompactCowStr`] to a shorter length.
     ///
-    /// If the length of the [`CompactString`] is less or equal to `new_len`, the call is a no-op.
+    /// If the length of the [`CompactCowStr`] is less or equal to `new_len`, the call is a no-op.
     ///
-    /// Calling this function does not change the capacity of the [`CompactString`].
+    /// Calling this function does not change the capacity of the [`CompactCowStr`].
     ///
     /// # Panics
     ///
@@ -648,8 +703,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("Hello, world!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("Hello, world!");
     /// s.truncate(5);
     /// assert_eq!(s, "Hello");
     /// ```
@@ -657,13 +712,13 @@ impl<'a> CompactCowStr<'a> {
         self.as_mut_compact_string().truncate(new_len)
     }
 
-    /// Converts a [`CompactString`] to a raw pointer.
+    /// Converts a [`CompactCowStr`] to a raw pointer.
     #[inline]
     pub fn as_ptr(&self) -> *const u8 {
         self.as_ref_compact_string().as_ptr()
     }
 
-    /// Converts a mutable [`CompactString`] to a raw pointer.
+    /// Converts a mutable [`CompactCowStr`] to a raw pointer.
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
         self.as_mut_compact_string().as_mut_ptr()
@@ -676,8 +731,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("Hello!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("Hello!");
     /// s.insert_str(5, ", world");
     /// assert_eq!(s, "Hello, world!");
     /// ```
@@ -692,8 +747,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("Hello world!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("Hello world!");
     /// s.insert(5, ',');
     /// assert_eq!(s, "Hello, world!");
     /// ```
@@ -701,13 +756,13 @@ impl<'a> CompactCowStr<'a> {
         self.insert_str(idx, ch.encode_utf8(&mut [0; 4]));
     }
 
-    /// Reduces the length of the [`CompactString`] to zero.
+    /// Reduces the length of the [`CompactCowStr`] to zero.
     ///
-    /// Calling this function does not change the capacity of the [`CompactString`].
+    /// Calling this function does not change the capacity of the [`CompactCowStr`].
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("Rust is the most loved language on Stackoverflow!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("Rust is the most loved language on Stackoverflow!");
     /// assert_eq!(s.capacity(), 49);
     ///
     /// s.clear();
@@ -719,10 +774,10 @@ impl<'a> CompactCowStr<'a> {
         self.as_mut_compact_string().clear()
     }
 
-    /// Split the [`CompactString`] into at the given byte index.
+    /// Split the [`CompactCowStr`] into at the given byte index.
     ///
-    /// Calling this function does not change the capacity of the [`CompactString`], unless the
-    /// [`CompactString`] is backed by a `&'static str`.
+    /// Calling this function does not change the capacity of the [`CompactCowStr`], unless the
+    /// [`CompactCowStr`] is backed by a `&'static str`.
     ///
     /// # Panics
     ///
@@ -731,8 +786,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::const_new("Hello, world!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::const_new("Hello, world!");
     /// let w = s.split_off(5);
     ///
     /// assert_eq!(w, ", world!");
@@ -742,9 +797,9 @@ impl<'a> CompactCowStr<'a> {
         self.as_mut_compact_string().split_off(at).into()
     }
 
-    /// Remove a range from the [`CompactString`], and return it as an iterator.
+    /// Remove a range from the [`CompactCowStr`], and return it as an iterator.
     ///
-    /// Calling this function does not change the capacity of the [`CompactString`].
+    /// Calling this function does not change the capacity of the [`CompactCowStr`].
     ///
     /// # Panics
     ///
@@ -755,8 +810,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::new("Hello, world!");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::new("Hello, world!");
     ///
     /// let mut d = s.drain(5..12);
     /// assert_eq!(d.next(), Some(','));   // iterate over the extracted data
@@ -771,7 +826,7 @@ impl<'a> CompactCowStr<'a> {
         self.as_mut_compact_string().drain(range)
     }
 
-    /// Shrinks the capacity of this [`CompactString`] with a lower bound.
+    /// Shrinks the capacity of this [`CompactCowStr`] with a lower bound.
     ///
     /// The resulting capactity is never less than the size of 3×[`usize`],
     /// i.e. the capacity than can be inlined.
@@ -781,8 +836,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::with_capacity(100);
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::with_capacity(100);
     /// assert_eq!(s.capacity(), 100);
     ///
     /// // if the capacity was already bigger than the argument, the call is a no-op
@@ -813,8 +868,8 @@ impl<'a> CompactCowStr<'a> {
     /// Basic usage:
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::from("This is a string with more than 24 characters.");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::from("This is a string with more than 24 characters.");
     ///
     /// s.reserve(100);
     /// assert!(s.capacity() >= 100);
@@ -824,8 +879,8 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::from("short string");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::from("short string");
     ///
     /// s.reserve(100);
     /// assert!(s.capacity() >= 100);
@@ -848,8 +903,8 @@ impl<'a> CompactCowStr<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let mut s = CompactString::from("äb𝄞d€");
+    /// # use compact_str::CompactCowStr;
+    /// let mut s = CompactCowStr::from("äb𝄞d€");
     ///
     /// let keep = [false, true, true, false, true];
     /// let mut iter = keep.iter();
@@ -866,49 +921,49 @@ impl<'a> CompactCowStr<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let chess_knight = b"\xf0\x9f\xa8\x84";
     ///
     /// assert_eq!(
     ///     "🨄",
-    ///     CompactString::from_utf8_lossy(chess_knight),
+    ///     CompactCowStr::from_utf8_lossy(chess_knight),
     /// );
     ///
     /// // For valid UTF-8 slices, this is the same as:
     /// assert_eq!(
     ///     "🨄",
-    ///     CompactString::new(std::str::from_utf8(chess_knight).unwrap()),
+    ///     CompactCowStr::new(std::str::from_utf8(chess_knight).unwrap()),
     /// );
     /// ```
     ///
     /// Incorrect bytes:
     ///
     /// ```
-    /// # use compact_str::CompactString;
+    /// # use compact_str::CompactCowStr;
     /// let broken = b"\xf0\x9f\xc8\x84";
     ///
     /// assert_eq!(
     ///     "�Ȅ",
-    ///     CompactString::from_utf8_lossy(broken),
+    ///     CompactCowStr::from_utf8_lossy(broken),
     /// );
     ///
     /// // For invalid UTF-8 slices, this is an optimized implemented for:
     /// assert_eq!(
     ///     "�Ȅ",
-    ///     CompactString::from(String::from_utf8_lossy(broken)),
+    ///     CompactCowStr::from(String::from_utf8_lossy(broken)),
     /// );
     /// ```
     pub fn from_utf8_lossy(v: &[u8]) -> Self {
         String::from_utf8_lossy(v).into()
     }
 
-    /// Convert the [`CompactString`] into a [`String`].
+    /// Convert the [`CompactCowStr`] into a [`String`].
     ///
     /// # Examples
     ///
     /// ```
-    /// # use compact_str::CompactString;
-    /// let s = CompactString::new("Hello world");
+    /// # use compact_str::CompactCowStr;
+    /// let s = CompactCowStr::new("Hello world");
     /// let s = s.into_string();
     /// assert_eq!(s, "Hello world");
     /// ```
@@ -916,13 +971,13 @@ impl<'a> CompactCowStr<'a> {
         self.0.into_string()
     }
 
-    /// Convert a [`String`] into a [`CompactString`] _without inlining_.
+    /// Convert a [`String`] into a [`CompactCowStr`] _without inlining_.
     ///
     /// Note: You probably don't need to use this method, instead you should use `From<String>`
-    /// which is implemented for [`CompactString`].
+    /// which is implemented for [`CompactCowStr`].
     ///
     /// This method exists incase your code is very sensitive to memory allocations. Normally when
-    /// converting a [`String`] to a [`CompactString`] we'll inline short strings onto the stack.
+    /// converting a [`String`] to a [`CompactCowStr`] we'll inline short strings onto the stack.
     /// But this results in [`Drop`]-ing the original [`String`], which causes memory it owned on
     /// the heap to be deallocated. Instead when using this method, we always reuse the buffer that
     /// was previously owned by the [`String`], so no trips to the allocator are needed.
@@ -931,12 +986,12 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// ### Short Strings
     /// ```
-    /// use compact_str::CompactString;
+    /// use compact_str::CompactCowStr;
     ///
     /// let short = "hello world".to_string();
-    /// let c_heap = CompactString::from_string_buffer(short);
+    /// let c_heap = CompactCowStr::from_string_buffer(short);
     ///
-    /// // using CompactString::from_string_buffer, we'll re-use the String's underlying buffer
+    /// // using CompactCowStr::from_string_buffer, we'll re-use the String's underlying buffer
     /// assert!(c_heap.is_heap_allocated());
     ///
     /// // note: when Clone-ing a short heap allocated string, we'll eagerly inline at that point
@@ -948,13 +1003,13 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// ### Longer Strings
     /// ```
-    /// use compact_str::CompactString;
+    /// use compact_str::CompactCowStr;
     ///
     /// let x = "longer string that will be on the heap".to_string();
-    /// let c1 = CompactString::from(x);
+    /// let c1 = CompactCowStr::from(x);
     ///
     /// let y = "longer string that will be on the heap".to_string();
-    /// let c2 = CompactString::from_string_buffer(y);
+    /// let c2 = CompactCowStr::from_string_buffer(y);
     ///
     /// // for longer strings, we re-use the underlying String's buffer in both cases
     /// assert!(c1.is_heap_allocated());
@@ -963,25 +1018,25 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// ### Buffer Re-use
     /// ```
-    /// use compact_str::CompactString;
+    /// use compact_str::CompactCowStr;
     ///
     /// let og = "hello world".to_string();
     /// let og_addr = og.as_ptr();
     ///
-    /// let mut c = CompactString::from_string_buffer(og);
+    /// let mut c = CompactCowStr::from_string_buffer(og);
     /// let ex_addr = c.as_ptr();
     ///
-    /// // When converting to/from String and CompactString with from_string_buffer we always re-use
+    /// // When converting to/from String and CompactCowStr with from_string_buffer we always re-use
     /// // the same underlying allocated memory/buffer
     /// assert_eq!(og_addr, ex_addr);
     ///
     /// let long = "this is a long string that will be on the heap".to_string();
     /// let long_addr = long.as_ptr();
     ///
-    /// let mut long_c = CompactString::from(long);
+    /// let mut long_c = CompactCowStr::from(long);
     /// let long_ex_addr = long_c.as_ptr();
     ///
-    /// // When converting to/from String and CompactString with From<String>, we'll also re-use the
+    /// // When converting to/from String and CompactCowStr with From<String>, we'll also re-use the
     /// // underlying buffer, if the string is long, otherwise when converting to CompactString we
     /// // eagerly inline
     /// assert_eq!(long_addr, long_ex_addr);

@@ -788,6 +788,7 @@ impl Repr {
     /// Makes this [`Repr`] as owned.
     ///
     /// When this [`Repr`] represent bollowed resource, clone them to new heap.
+    #[inline(always)]
     pub fn make_owned(&mut self) {
         if let Some(str) = self.as_non_static_str() {
             *self = Repr::from_heap(HeapBuffer::new(str).unwrap_with_msg())
