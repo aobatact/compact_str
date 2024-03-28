@@ -62,7 +62,7 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// assert_eq!(compact, long);
     /// // we keep the same reference!
-    /// assert!(compact.as_ptr(), long.as_ptr());
+    /// assert_eq!(compact.as_ptr(), long.as_ptr());
     /// ```
     #[inline]
     #[track_caller]
@@ -97,7 +97,7 @@ impl<'a> CompactCowStr<'a> {
     ///
     /// assert_eq!(compact, long);
     /// // we keep the same reference!
-    /// assert!(compact.as_ref_str().unwrap().as_ptr(), long.as_ptr());
+    /// assert_eq!(compact.as_ref_str().unwrap().as_ptr(), long.as_ptr());
     ///
     /// const DEFAULT_NAME: CompactCowStr =
     ///     CompactCowStr::const_new("That is not dead which can eternal lie.");
@@ -472,14 +472,14 @@ impl<'a> CompactCowStr<'a> {
     /// Provides a mutable reference to the underlying buffer of bytes.
     ///
     /// # Safety
-    /// * All Rust strings, including `CompactString`, must be valid UTF-8. The caller must
+    /// * All Rust strings, including `CompactCowStr`, must be valid UTF-8. The caller must
     ///   guarantee
     /// that any modifications made to the underlying buffer are valid UTF-8.
     ///
     /// # Examples
     /// ```
     /// # use compact_str::CompactCowStr;
-    /// let mut s = CompactString::new("hello");
+    /// let mut s = CompactCowStr::new("hello");
     ///
     /// let slice = unsafe { s.as_mut_bytes() };
     /// // copy bytes into our string
@@ -616,11 +616,19 @@ impl<'a> CompactCowStr<'a> {
     /// assert!(!hello.is_heap_allocated());
     /// ```
     ///
-    /// ### Heap Allocated
+    /// ### Reference
     /// ```
     /// # use compact_str::CompactCowStr;
     /// let msg = CompactCowStr::new("this message will self destruct in 5, 4, 3, 2, 1 💥");
     ///
+    /// assert!(!msg.is_heap_allocated());
+    /// ```
+    ///
+    /// ### Heap Allocated
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// let mut msg = CompactCowStr::new("this message will self destruct in 5, 4, 3, 2, 1 💥");
+    /// msg.replace_range(0..1, "T");
     /// assert!(msg.is_heap_allocated());
     /// ```
     #[inline]
