@@ -16,9 +16,11 @@ use alloc::{borrow::Cow, string::String};
 use crate::Drain;
 use crate::{repr::Repr, CompactString, ReserveError, UnwrapWithMsg, Utf16Error};
 
-/// A [`CompactCowStr`] is a compact string type that can be used as [`Cow<str>`] for [`CompactString`].
-/// 
-/// 
+/// A [`CompactCowStr`] is a compact string type
+/// that can be used as [`Cow<str>`] for [`CompactString`].
+///
+/// It can own a string as [`CompactString`] keeping the value on heap
+/// or inline or static reference, or can borrow a str keeping the reference.  
 #[repr(transparent)]
 pub struct CompactCowStr<'a>(Repr, PhantomData<&'a ()>);
 
