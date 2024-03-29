@@ -179,6 +179,7 @@ impl Repr {
     pub unsafe fn from_utf8_unchecked_ref<B: AsRef<[u8]>>(buf: B) -> Result<Self, ReserveError> {
         let bytes = buf.as_ref();
         let bytes_len = bytes.len();
+        let str = core::str::from_utf8_unchecked(bytes);
 
         // There's an edge case where the final byte of this buffer == `HEAP_MASK`, which is
         // invalid UTF-8, but would result in us creating an inline variant, that identifies as
@@ -189,24 +190,11 @@ impl Repr {
             // If we hit the edge case, reserve additional space to make the repr becomes heap
             // allocated, which prevents us from writing this last byte inline
             if last_byte >= 0b11000000 {
-                // Create a Repr with enough capacity for the entire buffer
-                let mut repr = Repr::with_capacity(MAX_SIZE + 1)?;
-
-                // SAFETY: The caller is responsible for making sure the provided buffer is UTF-8. This
-                // invariant is documented in the public API
-                let slice = repr.as_mut_buf();
-                // write the chunk into the Repr
-                slice[..bytes_len].copy_from_slice(bytes);
-
-                // Set the length of the Repr
-                // SAFETY: We just wrote the entire `buf` into the Repr
-                repr.set_len(bytes_len);
-
-                return Ok(repr);
+                return Ok(Repr::from_heap(HeapBuffer::new(str)?));
             }
         }
         // Construct a Repr from the &str
-        Ok(Self::new_ref(core::str::from_utf8_unchecked(bytes)))
+        Ok(Self::new_ref(str))
     }
 
     /// Create a [`Repr`] from a [`String`], in `O(1)` time. We'll attempt to inline the string
@@ -542,7 +530,7 @@ impl Repr {
     }
 
     #[inline(always)]
-    const fn is_ref_str(&self) -> bool {
+    pub const fn is_ref_str(&self) -> bool {
         let last_byte = self.last_byte();
         last_byte >= STATIC_STR_MASK
     }
@@ -567,7 +555,7 @@ impl Repr {
 
     #[inline]
     #[rustversion::attr(since(1.64), const)]
-    pub fn as_ref_str<'a>(&'a self) -> Option<&'a str> {
+    pub fn as_ref_str(&self) -> Option<&str> {
         if self.is_ref_str() {
             // SAFETY: A `Repr` is transmuted from `RefStr`
             let s: &RefStr = unsafe { &*(self as *const Self as *const RefStr) };
@@ -579,7 +567,7 @@ impl Repr {
 
     #[inline]
     #[rustversion::attr(since(1.64), const)]
-    pub fn as_non_static_str<'a>(&'a self) -> Option<&'a str> {
+    pub fn as_non_static_str(&self) -> Option<&str> {
         if self.is_non_static_str() {
             // SAFETY: A `Repr` is transmuted from `RefStr`
             let s: &RefStr = unsafe { &*(self as *const Self as *const RefStr) };
@@ -787,7 +775,7 @@ impl Repr {
 
     /// Makes this [`Repr`] as owned.
     ///
-    /// When this [`Repr`] represent bollowed resource, clone them to new heap.
+    /// When this [`Repr`] represent borrowed resource, clone them to new heap.
     #[inline(always)]
     pub fn make_owned(&mut self) {
         if let Some(str) = self.as_non_static_str() {

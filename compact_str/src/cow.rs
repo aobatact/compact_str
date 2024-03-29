@@ -421,7 +421,7 @@ impl<'a> CompactCowStr<'a> {
     /// Otherwise it behaves the same as [`CompactCowStr::reserve()`].
     #[inline]
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), ReserveError> {
-        self.0.reserve(additional)
+        self.to_mut().try_reserve(additional)
     }
 
     /// Returns a string slice containing the entire [`CompactCowStr`].
@@ -450,7 +450,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn as_mut_str(&mut self) -> &mut str {
-        self.as_mut_compact_string().as_mut_str()
+        self.to_mut().as_mut_str()
     }
 
     /// Returns a byte slice of the [`CompactCowStr`]'s contents.
@@ -464,7 +464,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
-        &self.0.as_slice()[..self.len()]
+        self.to_ref().as_bytes()
     }
 
     // TODO: Implement a `try_as_mut_slice(...)` that will fail if it results in cloning?
@@ -491,7 +491,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8] {
-        self.0.as_mut_buf()
+        self.to_mut().as_mut_bytes()
     }
 
     /// Appends the given [`char`] to the end of this [`CompactCowStr`].
@@ -527,7 +527,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn pop(&mut self) -> Option<char> {
-        self.0.pop()
+        self.to_mut().pop()
     }
 
     /// Appends a given string slice onto the end of this [`CompactCowStr`]
@@ -543,7 +543,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn push_str(&mut self, s: &str) {
-        self.0.push_str(s)
+        self.to_mut().push_str(s)
     }
 
     /// Removes a [`char`] from this [`CompactCowStr`] at a byte position and returns it.
@@ -588,7 +588,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn remove(&mut self, idx: usize) -> char {
-        self.as_mut_compact_string().remove(idx)
+        self.to_mut().remove(idx)
     }
 
     /// Forces the length of the [`CompactCowStr`] to `new_len`.
@@ -596,6 +596,8 @@ impl<'a> CompactCowStr<'a> {
     /// This is a low-level operation that maintains none of the normal invariants for
     /// `CompactCowStr`. If you want to modify the `CompactCowStr` you should use methods like
     /// `push`, `push_str` or `pop`.
+    ///
+    /// This doesn't clone and mark as owned.
     ///
     /// # Safety
     /// * `new_len` must be less than or equal to `capacity()`
@@ -636,6 +638,46 @@ impl<'a> CompactCowStr<'a> {
         self.0.is_heap_allocated()
     }
 
+    /// Returns whether or not the [`CompactCowStr`] is borrowed.
+    /// This means that resource is not owned, and mutating this will cause clone.
+    ///
+    /// # Examples
+    /// ### Inlined
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// let hello = CompactCowStr::new("hello world");
+    ///
+    /// assert!(!hello.is_borrowed());
+    /// ```
+    ///
+    /// ### Static
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// let msg = CompactCowStr::const_new("this message will self destruct in 5, 4, 3, 2, 1 💥");
+    ///
+    /// assert!(msg.is_borrowed());
+    /// ```
+    ///
+    /// ### Reference
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// let msg = CompactCowStr::new("this message will self destruct in 5, 4, 3, 2, 1 💥");
+    ///
+    /// assert!(msg.is_borrowed());
+    /// ```
+    ///
+    /// ### Heap Allocated
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// let mut msg = CompactCowStr::new("this message will self destruct in 5, 4, 3, 2, 1 💥");
+    /// msg.to_mut();
+    /// assert!(!msg.is_borrowed());
+    /// ```
+    #[inline]
+    pub fn is_borrowed(&self) -> bool {
+        self.0.is_ref_str()
+    }
+
     /// Removes the specified range in the [`CompactCowStr`],
     /// and replaces it with the given string.
     /// The given string doesn't need to be the same length as the range.
@@ -664,8 +706,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn replace_range(&mut self, range: impl RangeBounds<usize>, replace_with: &str) {
-        self.as_mut_compact_string()
-            .replace_range(range, replace_with)
+        self.to_mut().replace_range(range, replace_with)
     }
 
     /// Creates a new [`CompactCowStr`] by repeating a string `n` times.
@@ -693,7 +734,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[must_use]
     pub fn repeat(&self, n: usize) -> Self {
-        self.as_ref_compact_string().repeat(n).into()
+        self.to_ref().repeat(n).into()
     }
 
     /// Truncate the [`CompactCowStr`] to a shorter length.
@@ -717,19 +758,19 @@ impl<'a> CompactCowStr<'a> {
     /// assert_eq!(s, "Hello");
     /// ```
     pub fn truncate(&mut self, new_len: usize) {
-        self.as_mut_compact_string().truncate(new_len)
+        self.to_mut().truncate(new_len)
     }
 
     /// Converts a [`CompactCowStr`] to a raw pointer.
     #[inline]
     pub fn as_ptr(&self) -> *const u8 {
-        self.as_ref_compact_string().as_ptr()
+        self.to_ref().as_ptr()
     }
 
     /// Converts a mutable [`CompactCowStr`] to a raw pointer.
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.as_mut_compact_string().as_mut_ptr()
+        self.to_mut().as_mut_ptr()
     }
 
     /// Insert string character at an index.
@@ -745,7 +786,7 @@ impl<'a> CompactCowStr<'a> {
     /// assert_eq!(s, "Hello, world!");
     /// ```
     pub fn insert_str(&mut self, idx: usize, string: &str) {
-        self.as_mut_compact_string().insert_str(idx, string)
+        self.to_mut().insert_str(idx, string)
     }
 
     /// Insert a character at an index.
@@ -779,13 +820,13 @@ impl<'a> CompactCowStr<'a> {
     /// assert_eq!(s.capacity(), 49);
     /// ```
     pub fn clear(&mut self) {
-        self.as_mut_compact_string().clear()
+        self.to_mut().clear()
     }
 
     /// Split the [`CompactCowStr`] into at the given byte index.
     ///
     /// Calling this function does not change the capacity of the [`CompactCowStr`], unless the
-    /// [`CompactCowStr`] is backed by a `&'static str`.
+    /// [`CompactCowStr`] is backed by a `&str`.
     ///
     /// # Panics
     ///
@@ -802,7 +843,18 @@ impl<'a> CompactCowStr<'a> {
     /// assert_eq!(s, "Hello");
     /// ```
     pub fn split_off(&mut self, at: usize) -> Self {
-        self.as_mut_compact_string().split_off(at).into()
+        if let Some(s) = self.as_static_str() {
+            let result = Self::const_new(&s[at..]);
+            // SAFETY: the previous line `self[at...]` would have panicked if `at` was invalid
+            unsafe { self.set_len(at) };
+            result
+        } else {
+            // This will make result as borrowed str.
+            let result = self[at..].into();
+            // SAFETY: the previous line `self[at...]` would have panicked if `at` was invalid
+            unsafe { self.set_len(at) };
+            result
+        }
     }
 
     /// Remove a range from the [`CompactCowStr`], and return it as an iterator.
@@ -831,7 +883,7 @@ impl<'a> CompactCowStr<'a> {
     /// assert_eq!(s, "Hello!");
     /// ```
     pub fn drain(&mut self, range: impl RangeBounds<usize>) -> Drain<'_> {
-        self.as_mut_compact_string().drain(range)
+        self.to_mut().drain(range)
     }
 
     /// Shrinks the capacity of this [`CompactCowStr`] with a lower bound.
@@ -861,7 +913,9 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn shrink_to(&mut self, min_capacity: usize) {
-        self.as_mut_compact_string().shrink_to(min_capacity)
+        if self.is_heap_allocated() {
+            self.to_mut().shrink_to(min_capacity)
+        }
     }
 
     /// Shrinks the capacity of this [`CompactString`] to match its length.
@@ -898,7 +952,7 @@ impl<'a> CompactCowStr<'a> {
     /// ```
     #[inline]
     pub fn shrink_to_fit(&mut self) {
-        self.as_mut_compact_string().shrink_to_fit()
+        self.shrink_to(0)
     }
 
     /// Retains only the characters specified by the predicate.
@@ -921,7 +975,7 @@ impl<'a> CompactCowStr<'a> {
     /// assert_eq!(s, "b𝄞€");
     /// ```
     pub fn retain(&mut self, predicate: impl FnMut(char) -> bool) {
-        self.as_mut_compact_string().retain(predicate)
+        self.to_mut().retain(predicate)
     }
 
     /// Decode a bytes slice as UTF-8 string, replacing any illegal codepoints
@@ -962,6 +1016,7 @@ impl<'a> CompactCowStr<'a> {
     /// );
     /// ```
     pub fn from_utf8_lossy(v: &[u8]) -> Self {
+        // fixme: optimize
         String::from_utf8_lossy(v).into()
     }
 
@@ -1062,12 +1117,28 @@ impl<'a> CompactCowStr<'a> {
     }
 
     #[inline]
-    fn as_ref_compact_string(&self) -> &CompactString {
+    fn to_ref(&self) -> &CompactString {
         unsafe { std::mem::transmute(self) }
     }
 
+    /// Acquires a mutable reference to the owned form of the data.
+    /// Clones the data if it is not already owned.
+    ///
+    /// ```
+    /// # use compact_str::CompactCowStr;
+    /// let original = "This is a string with more than 24 characters.";
+    /// let mut cow_str = CompactCowStr::new(original);
+    /// assert_eq!(cow_str.as_ptr(), original.as_ptr());
+    /// assert!(cow_str.is_borrowed());
+    /// assert!(!cow_str.is_heap_allocated());
+    /// cow_str.to_mut();
+    /// assert_ne!(cow_str.as_ptr(), original.as_ptr());
+    /// assert!(!cow_str.is_borrowed());
+    /// assert!(cow_str.is_heap_allocated());
+    /// ```
+    ///
     #[inline]
-    fn as_mut_compact_string(&mut self) -> &mut CompactString {
+    pub fn to_mut(&mut self) -> &mut CompactString {
         self.0.make_owned();
         unsafe { std::mem::transmute(self) }
     }
@@ -1087,12 +1158,28 @@ impl<'a> From<&'a CompactString> for CompactCowStr<'a> {
     #[inline]
     fn from(value: &'a CompactString) -> Self {
         if value.is_heap_allocated() {
+            // Create a new cow str as borrowed from source value.
             Self::new(value.as_str())
         } else {
             // If the original CompactString is not heap allocated,
             // we need to preserve whether this repr is stacic or non-static refernce,
-            // or is on the stack.
-            value.clone().into()
+            // or is on the stack, so clone the inner repr.
+            unsafe { CompactCowStr::new_raw(core::ptr::read(&value.0)) }
+        }
+    }
+}
+
+impl<'a, 'b> From<&'a CompactCowStr<'b>> for CompactCowStr<'a> {
+    #[inline]
+    fn from(value: &'a CompactCowStr<'b>) -> Self {
+        if value.is_heap_allocated() {
+            // Create a new cow str as borrowed from source value.
+            Self::new(value.as_str())
+        } else {
+            // If the original CompactString is not heap allocated,
+            // we need to preserve whether this repr is stacic or non-static refernce,
+            // or is on the stack, so clone the inner repr.
+            unsafe { CompactCowStr::new_raw(core::ptr::read(&value.0)) }
         }
     }
 }
@@ -1156,7 +1243,7 @@ impl AsRef<[u8]> for CompactCowStr<'_> {
 impl<'a> Borrow<str> for CompactCowStr<'a> {
     #[inline]
     fn borrow(&self) -> &str {
-        &self.as_str()
+        self.as_str()
     }
 }
 
@@ -1411,17 +1498,17 @@ where
     CompactString: Extend<S>,
 {
     fn extend<T: IntoIterator<Item = S>>(&mut self, iter: T) {
-        self.as_mut_compact_string().extend(iter);
+        self.to_mut().extend(iter);
     }
 }
 
 impl core::fmt::Write for CompactCowStr<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.as_mut_compact_string().write_str(s)
+        self.to_mut().write_str(s)
     }
 
     fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
-        self.as_mut_compact_string().write_fmt(args)
+        self.to_mut().write_fmt(args)
     }
 }
 
